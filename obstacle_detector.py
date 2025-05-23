@@ -29,13 +29,12 @@ class ObstacleDetector:
         return roi_w*0.25 < obs_center_x_in_roi < roi_w*0.75
 
     def _is_obstacle_on_left_of_center(self, obs_center_x_in_roi, roi_w):
-        return obs_center_x_in_roi < roi_w * 0.55 # Sol yarıdan biraz daha toleranslı
+        return obs_center_x_in_roi < roi_w * 0.55
 
-    def find_obstacles(self, input_frame_rgb, lane_info=None):
-        # Bu fonksiyon, input_frame_rgb'nin bir KOPYASI üzerine çizim yapmalı ve onu döndürmeli.
-        output_display_frame = input_frame_rgb.copy()
+    def find_obstacles(self, input_frame_rgb, lane_info=None): # Parametre adı güncellendi
+        output_display_frame = input_frame_rgb.copy() # Gelen frame'in kopyası üzerine çiz
         
-        hsv_original = cv2.cvtColor(input_frame_rgb, cv2.COLOR_RGB2HSV) # Tespit için orijinali kullan
+        hsv_original = cv2.cvtColor(input_frame_rgb, cv2.COLOR_RGB2HSV)
 
         ys, ye, xs, xe = self._get_roi_coords(input_frame_rgb.shape)
         roi_hsv_for_detection = hsv_original[ys:ye, xs:xe]
@@ -46,7 +45,6 @@ class ObstacleDetector:
         roi_area_total = (ye - ys) * (xe - xs)
         roi_width_px = (xe - xs)
 
-        # ROI'yi output_display_frame üzerine çiz (opsiyonel debug)
         cv2.rectangle(output_display_frame, (xs, ys), (xe, ye), (255, 255, 0), 1)
 
         turuncu_list, sari_list = [], []
@@ -60,7 +58,7 @@ class ObstacleDetector:
             ratio = area/roi_area_total if roi_area_total > 0 else 0
             if self.min_contour_area_ratio < ratio < self.max_contour_area_ratio:
                 x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
-                gx, gy = x_r+xs, y_r+ys # Global koordinatlar
+                gx, gy = x_r+xs, y_r+ys
                 cx_roi = x_r+w_r//2
                 
                 is_appr = ratio > self.approach_threshold_ratio_turuncu
@@ -94,20 +92,20 @@ class ObstacleDetector:
         return turuncu_list, sari_list, output_display_frame
 
 if __name__ == "__main__":
-    # ... (Test bloğu imshow kullanabilir, sorun değil) ...
     from picamera2 import Picamera2
-    CAM_WIDTH, CAM_HEIGHT = 320, 240 # Düşük çözünürlük test için
+    import time # time importu eksikti test bloğunda
+    CAM_WIDTH, CAM_HEIGHT = 320, 240
     picam2_test = Picamera2()
     config_test = picam2_test.create_video_configuration(main={"size": (CAM_WIDTH, CAM_HEIGHT), "format": "RGB888"})
-    picam2_test.configure(config_test)
-    picam2_test.start(); time.sleep(1)
+    picam2_test.configure(config_test); picam2_test.start(); time.sleep(1)
     detector = ObstacleDetector()
     cv2.namedWindow("Obstacle Test", cv2.WINDOW_NORMAL)
     try:
         while True:
             frame = picam2_test.capture_array("main")
             if frame is None: continue
-            _, _, display = detector.find_obstacles(frame) # frame'i direkt ver, kopya içinde alınacak
+            _, _, display = detector.find_obstacles(frame) # frame'i direkt ver
             cv2.imshow("Obstacle Test", display)
             if cv2.waitKey(1) & 0xFF == ord('q'): break
+    except Exception as e: print(f"Hata: {e}") # Hata mesajını yazdır
     finally: picam2_test.stop(); cv2.destroyAllWindows()
