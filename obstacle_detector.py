@@ -6,28 +6,27 @@ import numpy as np
 class ObstacleDetector:
     def __init__(self):
         print("Engel Tespit Modülü Başlatılıyor...")
-        # Turuncu renk için HSV aralıkları (AYARLANMALI)
-        self.turuncu_lower = np.array([5, 90, 90])   # S ve V min biraz daha düşük olabilir
-        self.turuncu_upper = np.array([25, 255, 255]) # H max biraz daha yüksek olabilir
-
-        # Sarı renk için HSV aralıkları (AYARLANMALI)
+        self.turuncu_lower = np.array([5, 90, 90])
+        self.turuncu_upper = np.array([25, 255, 255])
         self.sari_lower = np.array([18, 90, 90])
         self.sari_upper = np.array([35, 255, 255])
 
-        # Engel tespiti için parametreler
-        self.min_contour_area_ratio = 0.003 # Daha küçük engelleri de yakalamak için
-        self.max_contour_area_ratio = 0.60
+        self.min_contour_area_ratio = 0.003 
+        self.max_contour_area_ratio = 0.85 # Çok büyük bir alanı kaplayabilir (kamerayı doldurma durumu)
+        
+        # !!! YAKLAŞMA EŞİĞİ (ÖNEMLİ - İSTEĞİNİZE GÖRE AYARLANACAK) !!!
+        # "Kameranın büyük bir bölümünü kapladığında" sollama için bu değeri artırın.
+        # Örnek: ROI'nin %30'unu, %40'ını veya %50'sini kaplarsa. Test ederek bulun!
+        self.approach_threshold_ratio_turuncu = 0.30 # Başlangıç için %30 deneyelim
+        # Alternatif: Engelin bounding box yüksekliği de kontrol edilebilir.
+        # self.approach_min_height_ratio_turuncu = 0.40 # Frame yüksekliğinin %40'ı gibi
 
-        # YAKLAŞMA EŞİKLERİ (ÖNEMLİ - AYARLANMALI)
-        self.approach_threshold_ratio_turuncu = 0.07 # Örn: ROI'nin %7'sini kaplarsa "yakın"
-        self.approach_threshold_ratio_sari = 0.06    # Sarı için biraz daha erken
+        self.approach_threshold_ratio_sari = 0.06    
 
-        # ROI (Engellerin aranacağı bölge - AYARLANMALI)
-        self.roi_y_start_ratio = 0.40  # Görüntü yüksekliğinin %40'ından başlasın
-        self.roi_y_end_ratio = 0.90    # Neredeyse en alta kadar (%90)
-        self.roi_x_margin_ratio = 0.15 # Kenarlardan %15 içerde (şerit içine odaklan)
-        print("ObstacleDetector: ROI ve yaklaşma eşikleri güncellendi.")
-
+        self.roi_y_start_ratio = 0.40 
+        self.roi_y_end_ratio = 0.95 # Neredeyse en alta kadar bak (engel yakınsa alt kısmı kaplar)
+        self.roi_x_margin_ratio = 0.10 # Kenarlardan biraz daha geniş bakabiliriz
+        print(f"ObstacleDetector: Turuncu yaklaşma eşiği = {self.approach_threshold_ratio_turuncu}")
 
     def _get_roi_coords(self, frame_shape):
         height, width = frame_shape[:2]
@@ -37,26 +36,16 @@ class ObstacleDetector:
         x_end = int(width * (1 - self.roi_x_margin_ratio))
         return y_start, y_end, x_start, x_end
 
-    def _is_obstacle_in_center_region(self, obstacle_center_x_in_roi, roi_width_px):
-        """Engelin ROI'nin merkezine yakın olup olmadığını kontrol eder."""
-        # ROI genişliğinin %30 ile %70 arasındaki bölgesi merkez kabul edilebilir.
-        # Bu, engelin kabaca şeridin ortasında olduğunu varsayar.
-        # Daha hassas kontrol için şerit takip bilgisi (offset) kullanılabilir.
-        center_region_start = roi_width_px * 0.30
-        center_region_end = roi_width_px * 0.70
-        if center_region_start < obstacle_center_x_in_roi < center_region_end:
-            return True
-        return False
+    def _is_obstacle_in_center_region(self, obs_center_x_in_roi, roi_width_px):
+        # Engelin x koordinatı ROI'nin genişliğinin %25-%75 aralığındaysa merkezde kabul edelim.
+        return roi_width_px * 0.25 < obs_center_x_in_roi < roi_width_px * 0.75
 
-    def _is_obstacle_on_left_of_center(self, obstacle_center_x_in_roi, roi_width_px):
-        """Engelin ROI'nin merkezinin solunda olup olmadığını kontrol eder."""
-        # ROI genişliğinin %0 ile %55 arasındaki bölgesi sol kabul edilebilir.
-        if obstacle_center_x_in_roi < roi_width_px * 0.55:
-            return True
-        return False
+    def _is_obstacle_on_left_of_center(self, obs_center_x_in_roi, roi_width_px):
+        return obs_center_x_in_roi < roi_width_px * 0.60 # Sol yarıdan biraz daha toleranslı
 
     def find_obstacles(self, input_frame_rgb, lane_info=None):
         output_display_frame = input_frame_rgb.copy()
+        frame_height_original = input_frame_rgb.shape[0] # Orijinal frame yüksekliği
         hsv_original = cv2.cvtColor(input_frame_rgb, cv2.COLOR_RGB2HSV)
 
         ys, ye, xs, xe = self._get_roi_coords(input_frame_rgb.shape)
@@ -68,121 +57,80 @@ class ObstacleDetector:
         roi_area_total = (ye - ys) * (xe - xs)
         roi_width_px = (xe - xs)
 
-        # ROI'yi output_display_frame üzerine çiz
-        cv2.rectangle(output_display_frame, (xs, ys), (xe, ye), (200, 200, 0), 1) # ROI rengi
+        cv2.rectangle(output_display_frame, (xs, ys), (xe, ye), (200, 200, 0), 1)
 
         turuncu_list, sari_list = [], []
 
         # Turuncu Engel Tespiti
         mask_t = cv2.inRange(roi_hsv_for_detection, self.turuncu_lower, self.turuncu_upper)
-        kernel_morph = np.ones((3,3), np.uint8) # Daha küçük kernel
+        kernel_morph = np.ones((3,3), np.uint8)
         mask_t = cv2.erode(mask_t, kernel_morph, iterations=1)
-        mask_t = cv2.dilate(mask_t, kernel_morph, iterations=2) # Dilate biraz daha fazla
+        mask_t = cv2.dilate(mask_t, kernel_morph, iterations=2)
         contours_t, _ = cv2.findContours(mask_t, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         for cnt in contours_t:
             area = cv2.contourArea(cnt)
-            ratio = area / roi_area_total if roi_area_total > 0 else 0
+            ratio_roi = area / roi_area_total if roi_area_total > 0 else 0
 
-            if self.min_contour_area_ratio < ratio < self.max_contour_area_ratio:
+            if self.min_contour_area_ratio < ratio_roi < self.max_contour_area_ratio:
                 x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
-                # Global koordinatlar (output_display_frame için)
                 gx, gy = x_r + xs, y_r + ys
-                # ROI içindeki merkez x (konum kontrolü için)
                 center_x_roi = x_r + w_r // 2
                 
-                is_approaching = ratio > self.approach_threshold_ratio_turuncu
+                # Alan oranına göre yaklaşma
+                is_approaching_by_area = ratio_roi > self.approach_threshold_ratio_turuncu
+                
+                # İsteğe bağlı: Yükseklik oranına göre yaklaşma
+                # obstacle_height_ratio_frame = h_r / frame_height_original
+                # is_approaching_by_height = obstacle_height_ratio_frame > self.approach_min_height_ratio_turuncu
+                # is_approaching = is_approaching_by_area and is_approaching_by_height # İki koşul da sağlanmalı
+                is_approaching = is_approaching_by_area # Şimdilik sadece alan
+
                 is_in_my_lane = self._is_obstacle_in_center_region(center_x_roi, roi_width_px)
 
-                if is_in_my_lane: # Sadece kendi şeridimizdeki (merkezdeki) turuncuları al
+                if is_in_my_lane:
                     turuncu_list.append({
                         'rect': (gx, gy, w_r, h_r),
-                        'area_ratio': ratio,
+                        'area_ratio': ratio_roi,
                         'is_approaching': is_approaching,
-                        'is_in_my_lane': is_in_my_lane # Bu flag main.py'de kullanılabilir
+                        'is_in_my_lane': is_in_my_lane
                     })
-                    # Çizimler output_display_frame üzerine
-                    color = (0, 100, 255) if is_approaching else (0, 165, 255) # Yaklaşana farklı renk
+                    color = (0, 0, 255) if is_approaching else (0, 165, 255) # Yaklaşana kırmızı
                     cv2.rectangle(output_display_frame, (gx, gy), (gx + w_r, gy + h_r), color, 2)
-                    cv2.putText(output_display_frame, f"T {ratio:.2f}", (gx, gy - 5),
+                    cv2.putText(output_display_frame, f"T {ratio_roi:.2f}{' APP' if is_approaching else ''}", (gx, gy - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
-        # Sarı Engel Tespiti
+        # Sarı Engel Tespiti (aynı kalabilir)
+        # ... (önceki tam koddaki gibi) ...
         mask_s = cv2.inRange(roi_hsv_for_detection, self.sari_lower, self.sari_upper)
-        mask_s = cv2.erode(mask_s, kernel_morph, iterations=1)
-        mask_s = cv2.dilate(mask_s, kernel_morph, iterations=2)
+        mask_s = cv2.erode(mask_s, kernel_morph, iterations=1); mask_s = cv2.dilate(mask_s, kernel_morph, iterations=2)
         contours_s, _ = cv2.findContours(mask_s, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         for cnt in contours_s:
-            area = cv2.contourArea(cnt)
-            ratio = area / roi_area_total if roi_area_total > 0 else 0
-
+            area = cv2.contourArea(cnt); ratio = area/roi_area_total if roi_area_total > 0 else 0
             if self.min_contour_area_ratio < ratio < self.max_contour_area_ratio:
-                x_r, y_r, w_r, h_r = cv2.boundingRect(cnt)
-                gx, gy = x_r + xs, y_r + ys
-                center_x_roi = x_r + w_r // 2
+                x_r,y_r,w_r,h_r = cv2.boundingRect(cnt); gx,gy=x_r+xs,y_r+ys; cx_roi=x_r+w_r//2
+                is_on_l=self._is_obstacle_on_left_of_center(cx_roi,roi_width_px)
+                is_appr_s=ratio > self.approach_threshold_ratio_sari
+                if is_on_l:
+                    sari_list.append({'rect':(gx,gy,w_r,h_r),'area_ratio':ratio,'is_on_left_lane':is_on_l,'is_approaching':is_appr_s})
+                    clr=(0,200,200)if is_appr_s else(0,255,255)
+                    cv2.rectangle(output_display_frame,(gx,gy),(gx+w_r,gy+h_r),clr,2)
+                    cv2.putText(output_display_frame,f"S{ratio:.2f}",(gx,gy-5),cv2.FONT_HERSHEY_SIMPLEX,0.4,clr,1)
 
-                is_on_left = self._is_obstacle_on_left_of_center(center_x_roi, roi_width_px)
-                is_approaching_sari = ratio > self.approach_threshold_ratio_sari
-
-                if is_on_left: # Sadece sol şeritteki sarıları dikkate al
-                    sari_list.append({
-                        'rect': (gx, gy, w_r, h_r),
-                        'area_ratio': ratio,
-                        'is_on_left_lane': is_on_left,
-                        'is_approaching': is_approaching_sari
-                    })
-                    color = (0, 200, 200) if is_approaching_sari else (0, 255, 255)
-                    cv2.rectangle(output_display_frame, (gx, gy), (gx + w_r, gy + h_r), color, 2)
-                    cv2.putText(output_display_frame, f"S {ratio:.2f}", (gx, gy - 5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-                    
         return turuncu_list, sari_list, output_display_frame
 
 if __name__ == "__main__":
-    from picamera2 import Picamera2
-    import time
-    CAM_WIDTH, CAM_HEIGHT = 320, 240 # Test için düşük çözünürlük
-    picam2_test = Picamera2()
-    config_test = picam2_test.create_video_configuration(main={"size": (CAM_WIDTH, CAM_HEIGHT), "format": "RGB888"})
-    picam2_test.configure(config_test)
-    picam2_test.start()
-    time.sleep(1.5) # Kamera ısınsın
-
-    detector = ObstacleDetector()
-    cv2.namedWindow("Obstacle Test", cv2.WINDOW_NORMAL) # Yeniden boyutlandırılabilir pencere
-    print("Engel Tespit Testi. 'q' ile çıkın.")
-    print(f"Turuncu Yaklaşma Eşiği: {detector.approach_threshold_ratio_turuncu}")
-    print(f"ROI Y Başlangıç: {detector.roi_y_start_ratio}, X Marj: {detector.roi_x_margin_ratio}")
-
-
+    # ... (Test bloğu aynı kalabilir, yeni approach_threshold_ratio_turuncu değerini test edin)
+    from picamera2 import Picamera2; import time
+    CAM_W,CAM_H=320,240; picam2=Picamera2(); conf=picam2.create_preview_configuration(main={"size":(CAM_W,CAM_H),"format":"RGB888"})
+    picam2.configure(conf);picam2.start();time.sleep(1.5); detector=ObstacleDetector()
+    cv2.namedWindow("Obs Test",cv2.WINDOW_NORMAL); print(f"T.Yaklaşma Eşik:{detector.approach_threshold_ratio_turuncu}")
     try:
         while True:
-            frame = picam2_test.capture_array("main")
-            if frame is None: continue
-
-            # find_obstacles, üzerine çizilmiş bir kopya döndürür
-            turuncu_found, sari_found, display_img = detector.find_obstacles(frame)
-            
-            if turuncu_found:
-                for obs in turuncu_found:
-                    if obs['is_in_my_lane'] and obs['is_approaching']:
-                        print(f"Yakın Turuncu Engel (merkezde): Alan={obs['area_ratio']:.3f}")
-            if sari_found:
-                 for obs in sari_found:
-                    if obs['is_on_left_lane'] and obs['is_approaching']:
-                        print(f"Yakın Sarı Engel (solda): Alan={obs['area_ratio']:.3f}")
-
-
-            cv2.imshow("Obstacle Test", display_img)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    except Exception as e:
-        print(f"Test sırasında hata: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if picam2_test.started:
-            picam2_test.stop()
-        cv2.destroyAllWindows()
-        print("Test bitti.")
+            frm=picam2.capture_array("main");
+            if frm is None:continue
+            t_obs,s_obs,disp=detector.find_obstacles(frm)
+            # ... (test bloğundaki printler aynı)
+            cv2.imshow("Obs Test",disp)
+            if cv2.waitKey(1)&0xFF==ord('q'):break
+    finally:picam2.stop();cv2.destroyAllWindows()
