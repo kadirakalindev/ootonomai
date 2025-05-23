@@ -27,9 +27,9 @@ class State:
     MISSION_COMPLETE = "MISSION_COMPLETE" # Pist sonu için
 
 # --- Genel Parametreler ve Ayarlar ---
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
-CAMERA_FPS = 30
+CAMERA_WIDTH = 320
+CAMERA_HEIGHT = 240
+CAMERA_FPS = 20
 
 # Şerit takibi ve hız
 BASE_SPEED = 0.35

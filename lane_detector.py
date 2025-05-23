@@ -380,7 +380,7 @@ if __name__ == "__main__":
     try:
         # Düşük çözünürlükte test için: image_width=320, image_height=240
         # Daha yüksek: image_width=640, image_height=480
-        detector = LaneDetector(image_width=640, image_height=480, camera_fps=30)
+        detector = LaneDetector(image_width=320, image_height=240, camera_fps=30)
         print("Şerit Tespiti Testi Başlatılıyor. Çıkmak için Ctrl+C.")
         print("Kameranın perspektif ayarları için 'src_points' ve 'dst_points' değerlerini ayarlamanız gerekebilir.")
 

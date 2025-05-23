@@ -17,17 +17,17 @@ GPIO.setwarnings(False) # GPIO uyarılarını kapatabiliriz, isteğe bağlı
 
 # --- PIN KONFİGÜRASYONU (BOARD NUMARALANDIRMASI) ---
 # Sol Motor
-L_MOTOR_ENA = 12  # PWM Hız Kontrolü (Enable A)
-L_MOTOR_IN1 = 16  # Yön Pini 1
-L_MOTOR_IN2 = 18  # Yön Pini 2
+L_MOTOR_ENA = 18  # PWM Hız Kontrolü (Enable A)
+L_MOTOR_IN1 = 23  # Yön Pini 1
+L_MOTOR_IN2 = 24  # Yön Pini 2
 
 # Sağ Motor
-R_MOTOR_ENB = 32  # PWM Hız Kontrolü (Enable B)
-R_MOTOR_IN3 = 36  # Yön Pini 3
+R_MOTOR_ENB = 12  # PWM Hız Kontrolü (Enable B)
+R_MOTOR_IN3 = 16  # Yön Pini 3
 # !!! DİKKAT: Orijinal isteğinizde IN4 için de 36 belirtilmişti.
 # Bu bir çakışmadır. IN4 için farklı bir pin olmalı.
 # Örnek olarak 38 kullanıyorum. Lütfen kendi bağlantınızı kontrol edin!
-R_MOTOR_IN4 = 38  # Yön Pini 4 (ÖRNEK - LÜTFEN KONTROL EDİN)
+R_MOTOR_IN4 = 20  # Yön Pini 4 (ÖRNEK - LÜTFEN KONTROL EDİN)
 
 class MotorController:
     def __init__(self):
