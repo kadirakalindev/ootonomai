@@ -1,0 +1,12 @@
+# requirements.txt
+
+opencv-python>=4.5
+numpy>=1.20
+gpiozero>=1.6
+RPi.GPIO>=0.7 # gpiozero için bir bağımlılık, genellikle sistemde bulunur
+picamera2>=0.3.12 # Raspberry Pi OS Bullseye veya sonrası için
+# Eğer libcamera tabanlı olmayan eski bir OS kullanıyorsanız (Buster gibi):
+# picamera>=1.13
+
+# Opsiyonel, PWM stabilitesi için (eğer PiGPIOFactory kullanılıyorsa):
+# pigpio>=1.78
